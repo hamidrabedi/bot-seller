@@ -98,7 +98,22 @@ print('PaymentSettings/SystemConfig ready')
 PY
 }
 
+systemd_usable() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl list-units >/dev/null 2>&1 || return 1
+  return 0
+}
+
 install_services() {
+  if ! systemd_usable; then
+    echo "systemctl not available; using nohup fallback"
+    source "$VENV_DIR/bin/activate"
+    nohup "$VENV_DIR/bin/gunicorn" config.wsgi:application --bind 0.0.0.0:8000 --workers 2 > "$LOG_DIR/api.log" 2>&1 &
+    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+      nohup "$VENV_DIR/bin/python" manage.py run_telegram_bot > "$LOG_DIR/bot.log" 2>&1 &
+    fi
+    return
+  fi
   API_SERVICE=/etc/systemd/system/bot-seller-api.service
   BOT_SERVICE=/etc/systemd/system/bot-seller-bot.service
 
@@ -145,10 +160,13 @@ UNIT
   if [[ $EUID -eq 0 ]]; then
     mv /tmp/bot-seller-api.service "$API_SERVICE"
     mv /tmp/bot-seller-bot.service "$BOT_SERVICE"
-    systemctl daemon-reload
-    systemctl enable --now bot-seller-api.service
+    if ! systemctl daemon-reload || ! systemctl enable --now bot-seller-api.service; then
+      echo "systemd commands failed; falling back to nohup"
+      nohup_fallback
+      return
+    fi
     if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-      systemctl enable --now bot-seller-bot.service
+      systemctl enable --now bot-seller-bot.service || true
     else
       echo "TELEGRAM_BOT_TOKEN not set. Bot service installed but not started."
       systemctl disable --now bot-seller-bot.service || true
@@ -156,14 +174,26 @@ UNIT
   else
     sudo mv /tmp/bot-seller-api.service "$API_SERVICE"
     sudo mv /tmp/bot-seller-bot.service "$BOT_SERVICE"
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now bot-seller-api.service
+    if ! sudo systemctl daemon-reload || ! sudo systemctl enable --now bot-seller-api.service; then
+      echo "systemd commands failed; falling back to nohup"
+      nohup_fallback
+      return
+    fi
     if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-      sudo systemctl enable --now bot-seller-bot.service
+      sudo systemctl enable --now bot-seller-bot.service || true
     else
       echo "TELEGRAM_BOT_TOKEN not set. Bot service installed but not started."
       sudo systemctl disable --now bot-seller-bot.service || true
     fi
+  fi
+}
+
+nohup_fallback() {
+  source "$VENV_DIR/bin/activate"
+  cd "$PROJECT_DIR"
+  "$VENV_DIR/bin/gunicorn" config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --daemon --access-logfile "$LOG_DIR/api.log" --error-logfile "$LOG_DIR/api.err.log"
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    nohup "$VENV_DIR/bin/python" manage.py run_telegram_bot > "$LOG_DIR/bot.log" 2>&1 &
   fi
 }
 
