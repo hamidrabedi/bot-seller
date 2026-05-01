@@ -1,51 +1,38 @@
-# bot-seller (Django + Telegram + 3x-ui)
+# bot-seller (One-command production install)
 
-This project is focused on:
-- 3x-ui only (no other panel integrations)
-- Telegram bot sales flow
-- Manual bank-transfer receipts (temporary)
-- Django admin operations
-
-## Production install (single script)
+## Install with ONE command
 ```bash
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/your-org/bot-seller/main/install.sh | sudo bash
 ```
 
-### What the script does
-1. Installs required OS packages (on Debian/Ubuntu when possible).
-2. Creates `.env` interactively (secret key, hosts, telegram token, bank-transfer text).
-3. Creates virtualenv and installs all Python requirements.
-4. Runs migrations and collectstatic.
-5. Seeds/updates default `PaymentSettings` from `.env`.
-6. Runs app + bot in background:
-   - Preferred: systemd services (`bot-seller-api`, `bot-seller-bot`)
-   - Fallback: `nohup` processes if systemd permissions are unavailable.
+Optional (recommended) with Telegram token inline:
+```bash
+curl -fsSL https://raw.githubusercontent.com/your-org/bot-seller/main/install.sh | sudo TELEGRAM_BOT_TOKEN="123:ABC" bash
+```
 
-## After install
-- Health check:
+That command automatically does everything:
+- install OS dependencies
+- clone/update project
+- create `.env`
+- install Python dependencies
+- run migrations and collectstatic
+- seed bank transfer text settings
+- create and start background services with systemd
+
+## Service names
+- `bot-seller-api`
+- `bot-seller-bot`
+
+## Verify
 ```bash
 curl http://127.0.0.1:8000/api/health/
+systemctl status bot-seller-api
+systemctl status bot-seller-bot
 ```
-- Logs:
+
+## Notes
+- If no `TELEGRAM_BOT_TOKEN` is provided, API starts but bot service is installed and left stopped.
+- Set token in `/opt/bot-seller/.env` then run:
 ```bash
-tail -f logs/api.log
-tail -f logs/bot.log
+sudo systemctl restart bot-seller-bot
 ```
-
-## First admin user
-```bash
-source .venv/bin/activate
-python manage.py createsuperuser
-```
-
-## Payment flow (temporary)
-1. User asks for bank transfer info in bot.
-2. User transfers manually.
-3. User sends receipt image with caption `receipt:PLAN_ID`.
-4. Admin approves receipt in Django admin.
-5. User service is issued after approved receipt.
-
-## Important
-- For public deployment, put Nginx in front of port `8000` and enable HTTPS.
-- Keep `DEBUG=0` in production.
