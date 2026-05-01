@@ -8,21 +8,18 @@ APP_USER="${APP_USER:-$(id -un)}"
 ENV_FILE="$PROJECT_DIR/.env"
 VENV_DIR="$PROJECT_DIR/.venv"
 LOG_DIR="$PROJECT_DIR/logs"
+BIN_LINK="/usr/local/bin/seller"
+ACTION="${1:-install}"
 
-# Optional env inputs for zero-touch installs:
-# TELEGRAM_BOT_TOKEN, ALLOWED_HOSTS, BANK_TRANSFER_TEXT_FA, BANK_TRANSFER_TEXT_EN
-
-if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-  echo "Cloning project into $PROJECT_DIR"
-  mkdir -p "$(dirname "$PROJECT_DIR")"
-  git clone "$REPO_URL" "$PROJECT_DIR"
-fi
-cd "$PROJECT_DIR"
+usage() {
+  cat <<USAGE
+Usage: bash install.sh [install|update|remove]
+Default action: install
+USAGE
+}
 
 install_os_packages() {
-  if ! command -v apt-get >/dev/null 2>&1; then
-    return
-  fi
+  if ! command -v apt-get >/dev/null 2>&1; then return; fi
   if [[ $EUID -eq 0 ]]; then
     apt-get update
     apt-get install -y git curl python3 python3-venv python3-dev build-essential libjpeg-dev zlib1g-dev
@@ -32,19 +29,22 @@ install_os_packages() {
   fi
 }
 
-gen_secret() {
-  "$PYTHON_BIN" - <<'PY'
-import secrets
-print(secrets.token_urlsafe(50))
+gen_secret() { "$PYTHON_BIN" - <<'PY'
+import secrets; print(secrets.token_urlsafe(50))
 PY
 }
 
 default_hosts() {
   ip=$(hostname -I 2>/dev/null | awk '{print $1}') || true
-  if [[ -n "${ip:-}" ]]; then
-    echo "127.0.0.1,localhost,${ip}"
+  [[ -n "${ip:-}" ]] && echo "127.0.0.1,localhost,${ip}" || echo "127.0.0.1,localhost"
+}
+
+clone_or_update_repo() {
+  if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+    mkdir -p "$(dirname "$PROJECT_DIR")"
+    git clone "$REPO_URL" "$PROJECT_DIR"
   else
-    echo "127.0.0.1,localhost"
+    git -C "$PROJECT_DIR" pull --ff-only || true
   fi
 }
 
@@ -54,7 +54,7 @@ write_env() {
   TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
   BANK_FA="${BANK_TRANSFER_TEXT_FA:-شماره کارت: 0000-0000-0000-0000 | به نام: YOUR NAME}"
   BANK_EN="${BANK_TRANSFER_TEXT_EN:-Card Number: 0000-0000-0000-0000 | Holder: YOUR NAME}"
-
+  [[ -f "$ENV_FILE" ]] && return
   cat > "$ENV_FILE" <<ENV
 DJANGO_SECRET_KEY=${SECRET}
 DEBUG=0
@@ -66,6 +66,7 @@ ENV
 }
 
 setup_python() {
+  cd "$PROJECT_DIR"
   "$PYTHON_BIN" -m venv "$VENV_DIR"
   source "$VENV_DIR/bin/activate"
   pip install --upgrade pip wheel
@@ -73,6 +74,7 @@ setup_python() {
 }
 
 seed_defaults() {
+  cd "$PROJECT_DIR"
   source "$VENV_DIR/bin/activate"
   mkdir -p "$LOG_DIR" media staticfiles
   python manage.py migrate
@@ -80,48 +82,33 @@ seed_defaults() {
   python manage.py shell <<'PY'
 import os
 from core.models import PaymentSettings, SystemConfig
-fa = os.getenv('BANK_TRANSFER_TEXT_FA', 'شماره کارت: ...')
-en = os.getenv('BANK_TRANSFER_TEXT_EN', 'Card Number: ...')
-token = os.getenv('TELEGRAM_BOT_TOKEN', '')
-obj, _ = PaymentSettings.objects.get_or_create(title='default')
-obj.bank_transfer_text_fa = fa
-obj.bank_transfer_text_en = en
-obj.is_active = True
-obj.save()
-sc, _ = SystemConfig.objects.get_or_create(title='default')
-if token:
-    sc.telegram_bot_token = token
-sc.service_api_name = 'bot-seller-api'
-sc.service_bot_name = 'bot-seller-bot'
-sc.save()
-print('PaymentSettings/SystemConfig ready')
+fa=os.getenv('BANK_TRANSFER_TEXT_FA','شماره کارت: ...')
+en=os.getenv('BANK_TRANSFER_TEXT_EN','Card Number: ...')
+token=os.getenv('TELEGRAM_BOT_TOKEN','')
+ps,_=PaymentSettings.objects.get_or_create(title='default')
+ps.bank_transfer_text_fa=fa; ps.bank_transfer_text_en=en; ps.is_active=True; ps.save()
+sc,_=SystemConfig.objects.get_or_create(title='default')
+if token: sc.telegram_bot_token=token
+sc.service_api_name='bot-seller-api'; sc.service_bot_name='bot-seller-bot'; sc.save()
 PY
 }
 
-systemd_usable() {
-  command -v systemctl >/dev/null 2>&1 || return 1
-  systemctl list-units >/dev/null 2>&1 || return 1
-  return 0
+systemd_usable() { command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; }
+
+nohup_fallback() {
+  cd "$PROJECT_DIR"; source "$VENV_DIR/bin/activate"
+  "$VENV_DIR/bin/gunicorn" config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --daemon --access-logfile "$LOG_DIR/api.log" --error-logfile "$LOG_DIR/api.err.log"
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    nohup "$VENV_DIR/bin/python" manage.py run_telegram_bot > "$LOG_DIR/bot.log" 2>&1 &
+  fi
 }
 
 install_services() {
-  if ! systemd_usable; then
-    echo "systemctl not available; using nohup fallback"
-    source "$VENV_DIR/bin/activate"
-    nohup "$VENV_DIR/bin/gunicorn" config.wsgi:application --bind 0.0.0.0:8000 --workers 2 > "$LOG_DIR/api.log" 2>&1 &
-    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-      nohup "$VENV_DIR/bin/python" manage.py run_telegram_bot > "$LOG_DIR/bot.log" 2>&1 &
-    fi
-    return
-  fi
-  API_SERVICE=/etc/systemd/system/bot-seller-api.service
-  BOT_SERVICE=/etc/systemd/system/bot-seller-bot.service
-
+  if ! systemd_usable; then nohup_fallback; return; fi
   cat > /tmp/bot-seller-api.service <<UNIT
 [Unit]
 Description=bot-seller API
 After=network.target
-
 [Service]
 Type=simple
 User=${APP_USER}
@@ -129,19 +116,13 @@ WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${VENV_DIR}/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
 Restart=always
-RestartSec=5
-StandardOutput=append:${LOG_DIR}/api.log
-StandardError=append:${LOG_DIR}/api.err.log
-
 [Install]
 WantedBy=multi-user.target
 UNIT
-
   cat > /tmp/bot-seller-bot.service <<UNIT
 [Unit]
 Description=bot-seller Telegram bot
 After=network.target bot-seller-api.service
-
 [Service]
 Type=simple
 User=${APP_USER}
@@ -149,64 +130,57 @@ WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${VENV_DIR}/bin/python manage.py run_telegram_bot
 Restart=always
-RestartSec=5
-StandardOutput=append:${LOG_DIR}/bot.log
-StandardError=append:${LOG_DIR}/bot.err.log
-
 [Install]
 WantedBy=multi-user.target
 UNIT
-
   if [[ $EUID -eq 0 ]]; then
-    mv /tmp/bot-seller-api.service "$API_SERVICE"
-    mv /tmp/bot-seller-bot.service "$BOT_SERVICE"
-    if ! systemctl daemon-reload || ! systemctl enable --now bot-seller-api.service; then
-      echo "systemd commands failed; falling back to nohup"
-      nohup_fallback
-      return
-    fi
-    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-      systemctl enable --now bot-seller-bot.service || true
-    else
-      echo "TELEGRAM_BOT_TOKEN not set. Bot service installed but not started."
-      systemctl disable --now bot-seller-bot.service || true
-    fi
+    mv /tmp/bot-seller-api.service /etc/systemd/system/bot-seller-api.service
+    mv /tmp/bot-seller-bot.service /etc/systemd/system/bot-seller-bot.service
+    systemctl daemon-reload
+    systemctl enable --now bot-seller-api.service
+    [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && systemctl enable --now bot-seller-bot.service || true
   else
-    sudo mv /tmp/bot-seller-api.service "$API_SERVICE"
-    sudo mv /tmp/bot-seller-bot.service "$BOT_SERVICE"
-    if ! sudo systemctl daemon-reload || ! sudo systemctl enable --now bot-seller-api.service; then
-      echo "systemd commands failed; falling back to nohup"
-      nohup_fallback
-      return
-    fi
-    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-      sudo systemctl enable --now bot-seller-bot.service || true
-    else
-      echo "TELEGRAM_BOT_TOKEN not set. Bot service installed but not started."
-      sudo systemctl disable --now bot-seller-bot.service || true
-    fi
+    sudo mv /tmp/bot-seller-api.service /etc/systemd/system/bot-seller-api.service
+    sudo mv /tmp/bot-seller-bot.service /etc/systemd/system/bot-seller-bot.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now bot-seller-api.service
+    [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && sudo systemctl enable --now bot-seller-bot.service || true
   fi
 }
 
-nohup_fallback() {
-  source "$VENV_DIR/bin/activate"
-  cd "$PROJECT_DIR"
-  "$VENV_DIR/bin/gunicorn" config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --daemon --access-logfile "$LOG_DIR/api.log" --error-logfile "$LOG_DIR/api.err.log"
-  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-    nohup "$VENV_DIR/bin/python" manage.py run_telegram_bot > "$LOG_DIR/bot.log" 2>&1 &
+install_cli_link() {
+  if [[ $EUID -eq 0 ]]; then
+    cat > "$BIN_LINK" <<WRAP
+#!/usr/bin/env bash
+exec bash ${PROJECT_DIR}/install.sh "\$@"
+WRAP
+    chmod +x "$BIN_LINK"
+  else
+    sudo tee "$BIN_LINK" >/dev/null <<WRAP
+#!/usr/bin/env bash
+exec bash ${PROJECT_DIR}/install.sh "\$@"
+WRAP
+    sudo chmod +x "$BIN_LINK"
   fi
 }
 
-main() {
-  install_os_packages
-  write_env
-  setup_python
-  seed_defaults
-  install_services
-  echo "Install complete."
-  echo "API: http://$(hostname -I | awk '{print $1}'):8000/api/health/"
-  echo "If bot token was omitted, set TELEGRAM_BOT_TOKEN in $ENV_FILE then run:"
-  echo "sudo systemctl restart bot-seller-bot"
+stop_services() {
+  if systemd_usable; then
+    ( [[ $EUID -eq 0 ]] && systemctl disable --now bot-seller-bot.service bot-seller-api.service ) || sudo systemctl disable --now bot-seller-bot.service bot-seller-api.service || true
+    ( [[ $EUID -eq 0 ]] && rm -f /etc/systemd/system/bot-seller-api.service /etc/systemd/system/bot-seller-bot.service && systemctl daemon-reload ) || sudo rm -f /etc/systemd/system/bot-seller-api.service /etc/systemd/system/bot-seller-bot.service || true
+  fi
+  pkill -f 'gunicorn config.wsgi:application' || true
+  pkill -f 'manage.py run_telegram_bot' || true
 }
 
-main "$@"
+install_action() { install_os_packages; clone_or_update_repo; write_env; setup_python; seed_defaults; install_services; install_cli_link; echo 'Installed.'; }
+update_action() { clone_or_update_repo; setup_python; seed_defaults; install_services; install_cli_link; echo 'Updated.'; }
+remove_action() { stop_services; rm -rf "$PROJECT_DIR"; ( [[ $EUID -eq 0 ]] && rm -f "$BIN_LINK" ) || sudo rm -f "$BIN_LINK" || true; echo 'Removed.'; }
+
+case "$ACTION" in
+  install) install_action ;;
+  update) update_action ;;
+  remove) remove_action ;;
+  -h|--help|help) usage ;;
+  *) echo "Unknown action: $ACTION"; usage; exit 1 ;;
+esac
