@@ -20,8 +20,17 @@ Running `seller` (or `install.sh` with no args) opens interactive menu:
 - Auto create Django superuser with random username/password and print at end
 
 ## Seller CLI
+## Installed CLI command
+Installer registers a global command: `seller`
+
+Usage:
 ```bash
 seller install
 seller update
 seller remove
 ```
+
+## Notes
+- `seller install`: install all dependencies, configure, migrate, and run in background.
+- `seller update`: pull latest code and restart services.
+- `seller remove`: stop services and remove project files.
