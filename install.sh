@@ -79,15 +79,22 @@ seed_defaults() {
   python manage.py collectstatic --noinput
   python manage.py shell <<'PY'
 import os
-from core.models import PaymentSettings
+from core.models import PaymentSettings, SystemConfig
 fa = os.getenv('BANK_TRANSFER_TEXT_FA', 'شماره کارت: ...')
 en = os.getenv('BANK_TRANSFER_TEXT_EN', 'Card Number: ...')
+token = os.getenv('TELEGRAM_BOT_TOKEN', '')
 obj, _ = PaymentSettings.objects.get_or_create(title='default')
 obj.bank_transfer_text_fa = fa
 obj.bank_transfer_text_en = en
 obj.is_active = True
 obj.save()
-print('PaymentSettings ready')
+sc, _ = SystemConfig.objects.get_or_create(title='default')
+if token:
+    sc.telegram_bot_token = token
+sc.service_api_name = 'bot-seller-api'
+sc.service_bot_name = 'bot-seller-bot'
+sc.save()
+print('PaymentSettings/SystemConfig ready')
 PY
 }
 

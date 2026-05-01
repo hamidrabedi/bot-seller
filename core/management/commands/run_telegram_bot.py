@@ -2,7 +2,7 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from django.core.management.base import BaseCommand
-from core.models import Plan, UserService, PaymentSettings, PaymentReceipt
+from core.models import Plan, UserService, PaymentSettings, PaymentReceipt, SystemConfig
 
 
 MESSAGES = {
@@ -130,7 +130,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not token:
-            self.stderr.write("TELEGRAM_BOT_TOKEN is required")
+            cfg = SystemConfig.objects.filter(title="default").first()
+            token = cfg.telegram_bot_token if cfg and cfg.telegram_bot_token else ""
+        if not token:
+            self.stderr.write("TELEGRAM_BOT_TOKEN is required (env or SystemConfig)")
             return
 
         app = Application.builder().token(token).build()

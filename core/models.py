@@ -50,6 +50,17 @@ class PaymentSettings(models.Model):
         return self.title
 
 
+class SystemConfig(models.Model):
+    title = models.CharField(max_length=30, default="default", unique=True)
+    telegram_bot_token = models.CharField(max_length=255, blank=True)
+    service_api_name = models.CharField(max_length=120, default="bot-seller-api")
+    service_bot_name = models.CharField(max_length=120, default="bot-seller-bot")
+    allow_admin_restart = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.title
+
+
 class PaymentReceipt(models.Model):
     STATUS_CHOICES = (("pending", "pending"), ("approved", "approved"), ("rejected", "rejected"))
     telegram_user_id = models.BigIntegerField(db_index=True)

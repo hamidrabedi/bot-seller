@@ -1,0 +1,8 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+<li>
+  <a href="restart-services/" class="historylink">Restart API + BOT</a>
+</li>
+{{ block.super }}
+{% endblock %}

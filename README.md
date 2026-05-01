@@ -10,18 +10,17 @@ Optional (recommended) with Telegram token inline:
 curl -fsSL https://raw.githubusercontent.com/your-org/bot-seller/main/install.sh | sudo TELEGRAM_BOT_TOKEN="123:ABC" bash
 ```
 
-That command automatically does everything:
-- install OS dependencies
-- clone/update project
-- create `.env`
-- install Python dependencies
-- run migrations and collectstatic
-- seed bank transfer text settings
-- create and start background services with systemd
+## What gets configured in DB (not env)
+After install, defaults are seeded in database:
+- `PaymentSettings` (bank transfer text)
+- `SystemConfig` (telegram token fallback, service names, restart toggle)
 
-## Service names
-- `bot-seller-api`
-- `bot-seller-bot`
+You can change these in Django admin without redeploy.
+
+## Admin restart button
+In Django admin -> `SystemConfig` changelist, there is a **Restart API + BOT** button.
+- It calls systemctl restart for service names stored in `SystemConfig`.
+- For safety it only works when `allow_admin_restart=True`.
 
 ## Verify
 ```bash
@@ -30,9 +29,5 @@ systemctl status bot-seller-api
 systemctl status bot-seller-bot
 ```
 
-## Notes
-- If no `TELEGRAM_BOT_TOKEN` is provided, API starts but bot service is installed and left stopped.
-- Set token in `/opt/bot-seller/.env` then run:
-```bash
-sudo systemctl restart bot-seller-bot
-```
+## .env sample
+Use `.env.sample` as reference.
