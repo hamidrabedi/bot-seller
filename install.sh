@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/opt/bot-seller}"
-REPO_URL="${REPO_URL:-https://github.com/your-org/bot-seller.git}"
+REPO_URL="${REPO_URL:-https://github.com/hamidrabedi/bot-seller.git}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 APP_USER="${APP_USER:-$(id -un)}"
 ENV_FILE="$PROJECT_DIR/.env"

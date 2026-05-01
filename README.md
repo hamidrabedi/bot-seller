@@ -2,7 +2,7 @@
 
 ## One command install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/bot-seller/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/hamidrabedi/bot-seller/main/install.sh | sudo bash
 ```
 
 ## Installed CLI command
