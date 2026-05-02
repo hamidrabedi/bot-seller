@@ -21,7 +21,13 @@ from .models import (
     SystemConfig,
     UserService,
 )
-from .services.provisioning import ProvisioningError, create_user_service
+from .services.provisioning import (
+    ProvisioningError,
+    create_user_service,
+    renew_user_service,
+    revoke_user_service,
+    suspend_user_service,
+)
 
 
 class AdminRoleGrantInline(admin.TabularInline):
@@ -54,6 +60,55 @@ class UserServiceAdmin(admin.ModelAdmin):
     list_display = ("telegram_user_id", "email", "plan", "panel", "status", "expire_at")
     search_fields = ("telegram_user_id", "email")
     list_filter = ("status", "panel", "plan")
+    actions = ("renew_services", "suspend_services", "revoke_services")
+
+    @admin.action(description="Renew selected services by their plan duration")
+    def renew_services(self, request, queryset):
+        renewed_count = 0
+        failed_count = 0
+        for service in queryset.select_related("plan", "panel"):
+            try:
+                renew_user_service(service=service, admin_user=request.user)
+                renewed_count += 1
+            except ProvisioningError as exc:
+                failed_count += 1
+                self.message_user(request, f"Service {service.pk} failed to renew: {exc}", level=messages.ERROR)
+        if renewed_count:
+            self.message_user(request, f"Renewed {renewed_count} service(s).", level=messages.SUCCESS)
+        if failed_count and not renewed_count:
+            self.message_user(request, f"Failed to renew {failed_count} service(s).", level=messages.ERROR)
+
+    @admin.action(description="Suspend selected services")
+    def suspend_services(self, request, queryset):
+        suspended_count = 0
+        failed_count = 0
+        for service in queryset.select_related("panel"):
+            try:
+                suspend_user_service(service=service, admin_user=request.user)
+                suspended_count += 1
+            except ProvisioningError as exc:
+                failed_count += 1
+                self.message_user(request, f"Service {service.pk} failed to suspend: {exc}", level=messages.ERROR)
+        if suspended_count:
+            self.message_user(request, f"Suspended {suspended_count} service(s).", level=messages.SUCCESS)
+        if failed_count and not suspended_count:
+            self.message_user(request, f"Failed to suspend {failed_count} service(s).", level=messages.ERROR)
+
+    @admin.action(description="Revoke selected services")
+    def revoke_services(self, request, queryset):
+        revoked_count = 0
+        failed_count = 0
+        for service in queryset.select_related("panel"):
+            try:
+                revoke_user_service(service=service, admin_user=request.user)
+                revoked_count += 1
+            except ProvisioningError as exc:
+                failed_count += 1
+                self.message_user(request, f"Service {service.pk} failed to revoke: {exc}", level=messages.ERROR)
+        if revoked_count:
+            self.message_user(request, f"Revoked {revoked_count} service(s).", level=messages.SUCCESS)
+        if failed_count and not revoked_count:
+            self.message_user(request, f"Failed to revoke {failed_count} service(s).", level=messages.ERROR)
 
 
 @admin.register(PaymentSettings)
