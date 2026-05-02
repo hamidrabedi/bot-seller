@@ -1,45 +1,82 @@
-# Project plan (production-ready target, minimal services)
+# Delivery plan
 
-## Fixed constraints
-- Database: SQLite (as requested)
-- Panels: 3x-ui only (no marzban/other panels)
-- Interfaces: Django admin + REST API + Telegram bot
-- Keep service count low: single Django service process for MVP
+## Goal
+- Finish the branch into a strong production-minded foundation for a 3x-ui Telegram seller bot with Django admin, scoped multi-admin permissions, and controlled config generation.
 
-## Done
-- Django project + admin + SQLite
-- Telegram bot commands and inline purchase flow
-- 3x-ui adapter and provisioning service
-- APIs for plans/create-service/my-services
-- One-script deploy
+## What already exists
+- Django project, admin, SQLite setup, API health endpoint
+- Plan, panel, user service, payment receipt, and system config models
+- Basic Telegram polling bot
+- Basic 3x-ui client and provisioning flow
+- Installer and deployment bootstrap
 
-## Remaining tasks to reach production-ready
+## What this branch is building
+- Explicit admin roles and grants
+- Panel-level admin scopes
+- Config generation policy and daily quota controls
+- Audit logging for privileged actions
+- Admin receipt approval that provisions services through the policy layer
+- A clearer execution path toward renew, suspend, revoke, reporting, and async job support
 
-### 1) Security hardening
-- Move all secrets to environment variables
-- Enforce strong `DJANGO_SECRET_KEY`
-- Restrict `ALLOWED_HOSTS`
-- Add admin rate-limit / IP restrictions at reverse proxy
+## Full todo list
 
-### 2) Reliability
-- Add request timeouts/retries for 3x-ui calls
-- Add structured logging around provisioning attempts
-- Add idempotency key for create-service to avoid duplicate buys
+### Platform foundation
+- Keep migrations linear and valid
+- Expand tests around policy enforcement and admin approval flows
+- Add seed/bootstrap commands for roles and initial config
+- Document architecture and rollout order in-repo
 
-### 3) Product completeness
-- Add payment callback endpoint
-- Add usage sync endpoint/cron command for 3x-ui usage data
-- Add renewal endpoint and Telegram button
+### Permissions and policy
+- Add admin profile, role, grant, assignment, and panel scope models
+- Enforce `configs.generate` through a service-layer policy check
+- Enforce per-panel daily admin limits
+- Enforce per-plan generation policy and self-service toggles
+- Record quota events for each successful generation
+- Record audit entries for each privileged action
 
-### 4) Deployment
-- Add systemd service templates for API and bot
-- Put Nginx in front of Django
-- Enable HTTPS (Let's Encrypt)
-- Run DB backups for SQLite file
+### Sales and approval flow
+- Let users submit receipts
+- Let admins approve receipts from Django admin
+- Provision services automatically on approval
+- Reject receipts cleanly from Django admin
+- Prevent approval actions from bypassing policy checks
 
-## Execution order (clean and practical)
-1. security envs
-2. payment + renewal
-3. usage sync
-4. deployment hardening
-5. monitoring/alerts
+### Service lifecycle
+- Support renew flow in the service layer
+- Support suspend and revoke flow in the service layer
+- Track service status transitions explicitly
+- Add admin actions for lifecycle management
+
+### Telegram bot
+- Keep customer menu simple and working
+- Add clearer service status display
+- Add renewal entry point
+- Add `payment pending` and `receipt submitted` states
+- Later: split handlers and business logic more cleanly for async-first operation
+
+### 3x-ui integration
+- Keep 3x-ui code isolated behind service adapters
+- Add stronger error messages and retry strategy
+- Extend adapter for lifecycle operations after create
+- Add tests around provisioning edge cases
+
+### Admin and operations
+- Add role bootstrap command
+- Add better list filters and search for services, audits, quotas
+- Add operational visibility for who approved what
+- Preserve existing restart controls
+
+### Later but planned
+- Payment gateway callbacks
+- Usage sync and expiry jobs
+- Reporting dashboards
+- Background worker separation
+- Full async bot/webhook architecture
+
+## Execution order
+1. Fix migration chain and stabilize the policy foundation.
+2. Finish admin approval and provisioning flow.
+3. Add tests for policy and approval behavior.
+4. Add service lifecycle actions and status transitions.
+5. Improve Telegram and API integration around the new service layer.
+6. Continue toward async separation and background jobs.

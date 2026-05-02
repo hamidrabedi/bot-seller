@@ -1,8 +1,9 @@
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status
-from core.models import Plan, UserService, PaymentSettings, PaymentReceipt
-from core.services.provisioning import create_user_service, ProvisioningError
+
+from core.models import PaymentReceipt, PaymentSettings, Plan, UserService
+from core.services.provisioning import ProvisioningError, create_user_service
 
 
 class PlansView(APIView):
@@ -64,7 +65,9 @@ class CreateServiceView(APIView):
             return Response({"detail": "telegram_user_id and plan_id required"}, status=status.HTTP_400_BAD_REQUEST)
 
         has_approved_payment = PaymentReceipt.objects.filter(
-            telegram_user_id=telegram_user_id, plan_id=plan_id, status="approved"
+            telegram_user_id=telegram_user_id,
+            plan_id=plan_id,
+            status="approved",
         ).exists()
         if not has_approved_payment:
             return Response({"detail": "approved payment receipt required"}, status=status.HTTP_402_PAYMENT_REQUIRED)
@@ -74,7 +77,7 @@ class CreateServiceView(APIView):
             return Response({"detail": "active plan not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            service = create_user_service(telegram_user_id=telegram_user_id, plan=plan)
+            service = create_user_service(telegram_user_id=telegram_user_id, plan=plan, reason="user_purchase")
         except ProvisioningError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -93,6 +96,13 @@ class MyServicesView(APIView):
             return Response({"detail": "telegram_user_id required"}, status=status.HTTP_400_BAD_REQUEST)
 
         services = UserService.objects.filter(telegram_user_id=telegram_user_id).values(
-            "id", "email", "status", "expire_at", "config_link", "plan__name_fa", "plan__name_en", "plan__traffic_gb"
+            "id",
+            "email",
+            "status",
+            "expire_at",
+            "config_link",
+            "plan__name_fa",
+            "plan__name_en",
+            "plan__traffic_gb",
         )
         return Response(list(services))
