@@ -28,12 +28,20 @@ class Plan(models.Model):
 
 
 class UserService(models.Model):
+    STATUS_CHOICES = (
+        ("pending", "pending"),
+        ("active", "active"),
+        ("suspended", "suspended"),
+        ("expired", "expired"),
+        ("revoked", "revoked"),
+    )
+
     telegram_user_id = models.BigIntegerField(db_index=True)
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT)
     panel = models.ForeignKey(Panel3XUI, on_delete=models.PROTECT)
     email = models.CharField(max_length=120, unique=True)
     config_link = models.TextField(blank=True)
-    status = models.CharField(max_length=20, default="active")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     expire_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
