@@ -39,6 +39,7 @@ class UserService(models.Model):
     telegram_user_id = models.BigIntegerField(db_index=True)
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT)
     panel = models.ForeignKey(Panel3XUI, on_delete=models.PROTECT)
+    client_uuid = models.CharField(max_length=120, blank=True)
     email = models.CharField(max_length=120, unique=True)
     config_link = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
